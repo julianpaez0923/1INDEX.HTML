@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAGA - Simulador de Carga Profesional</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <style>
+        :root { --sidebar-w: 280px; --primary: #2563eb; }
+        body { background: #f1f5f9; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+        
+        /* Layout */
+        #app { display: flex; height: 100vh; }
+        .sidebar { width: var(--sidebar-w); background: #0f172a; color: white; flex-shrink: 0; display: flex; flex-direction: column; transition: 0.3s; z-index: 50; }
+        .content { flex-grow: 1; overflow-y: auto; padding: 20px; position: relative; }
+        
+        /* 3D Canvas */
+        #canvas-wrapper {
+            width: 100%; height: 500px;
+            background: radial-gradient(circle at center, #e2e8f0 0%, #94a3b8 100%);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        
+        /* Utilidades */
+        .card { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); transition: 0.2s; }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        .btn { padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-danger { background: #ef4444; color: white; }
+        
+        /* Animaciones */
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <aside class="sidebar">
+        <div class="p-6 border-b border-slate-700">
+            <h1 class="text-xl font-bold flex items-center gap-2">
+                <i class="fas fa-cube text-blue-400"></i> SAGA  3D
+            </h1>
+            <p class="text-xs text-slate-400 mt-1">Gestión  de Carga</p>
+        </div>
+        
+        <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
+            <button onclick="router('dashboard')" class="w-full text-left p-3 rounded hover:bg-slate-800 flex items-center gap-3 transition">
+                <i class="fas fa-th-large w-5"></i> Mis Unidades
+            </button>
+            <div class="mt-6 text-xs font-bold text-slate-500 uppercase px-3">Acciones</div>
+            <button onclick="openModal()" class="w-full text-left p-3 rounded bg-blue-600 hover:bg-blue-700 flex items-center gap-3 text-white transition shadow-lg">
+                <i class="fas fa-plus w-5"></i> Crear Nueva Unidad
+            </button>
+        </nav>
+
+        <div class="p-4 border-t border-slate-700 text-xs text-center text-slate-500">
+            COLOMBIA | V1.0
+        </div>
+    </aside>
+
+    <main class="content" id="main-view">
+        </main>
+</div>
+
+<div id="modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-[100] backdrop-blur-sm fade-in">
+    <div class="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl">
+        <h2 class="text-xl font-bold mb-4 text-slate-800">Nueva Unidad de Almacenamiento</h2>
+        
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-bold text-slate-600 mb-1">Nombre</label>
+                <input id="u-name" type="text" placeholder="Ej: Camión Ruta Norte" class="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none">
+            </div>
+            
+            <div>
+                <label class="block text-sm font-bold text-slate-600 mb-1">Tipo de Unidad</label>
+                <select id="u-type" class="w-full p-2 border border-slate-300 rounded" onchange="presetDims()">
+                    <option value="custom">Personalizado</option>
+                    <option value="estante">Estante Bodega (2m x 2m)</option>
+                    <option value="camion">Camión Sencillo (6m)</option>
+                    <option value="mula">Tractomula / Trailer (12m)</option>
+                    <option value="contenedor">Contenedor 40ft HC</option>
+                </select>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+                <div>
+                    <label class="text-xs font-bold text-slate-500">Ancho (cm)</label>
+                    <input id="u-w" type="number" value="240" class="w-full p-2 border rounded">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-500">Alto (cm)</label>
+                    <input id="u-h" type="number" value="260" class="w-full p-2 border rounded">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-500">Fondo (cm)</label>
+                    <input id="u-d" type="number" value="600" class="w-full p-2 border rounded">
+                </div>
+            </div>
+        </div>
+
+        <div class="flex gap-3 mt-6">
+            <button onclick="closeModal()" class="flex-1 py-2 bg-slate-200 text-slate-700 rounded font-bold hover:bg-slate-300">Cancelar</button>
+            <button onclick="createUnit()" class="flex-1 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 shadow-lg">Crear</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- ESTADO Y DATOS ---
+    let units = JSON.parse(localStorage.getItem('logimaster_db')) || [];
+    let activeUnitId = null;
+    
+    // Variables Three.js
+    let scene, camera, renderer, controls, truckMesh;
+    let boxesMeshes = [];
+
+    // --- ENRUTAMIENTO SIMPLE ---
+    function router(view, id = null) {
+        const main = document.getElementById('main-view');
+        main.innerHTML = '';
+        
+        if (view === 'dashboard') {
+            activeUnitId = null;
+            renderDashboard(main);
+        } else if (view === 'detail') {
+            activeUnitId = id;
+            renderDetail(main);
+            // Pequeño delay para asegurar que el DOM existe antes de iniciar 3D
+            setTimeout(init3D, 100); 
+        }
+    }
+
+    // --- VISTA: DASHBOARD ---
+    function renderDashboard(container) {
+        let html = `
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">Mis Unidades Guardadas</h2>
+            ${units.length === 0 ? `
+                <div class="text-center py-20 bg-white rounded-xl shadow-sm border border-dashed border-slate-300">
+                    <i class="fas fa-truck-loading text-6xl text-slate-200 mb-4"></i>
+                    <p class="text-slate-500 text-lg">No hay unidades creadas.</p>
+                    <button onclick="openModal()" class="mt-4 text-blue-600 font-bold hover:underline">Crear la primera ahora</button>
+                </div>
+            ` : '<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">'}
+        `;
+
+        units.forEach(u => {
+            const volTotal = u.w * u.h * u.d;
+            const volOcupado = u.cargo.reduce((acc, box) => acc + (box.w * box.h * box.d * box.q), 0);
+            const porcentaje = Math.min(100, (volOcupado / volTotal) * 100).toFixed(1);
+            
+            // Icono según tipo
+            let icon = 'fa-warehouse';
+            if(u.type.includes('camion')) icon = 'fa-truck';
+            if(u.type.includes('mula')) icon = 'fa-truck-moving';
+            if(u.type.includes('contenedor')) icon = 'fa-box-open';
+
+            html += `
+                <div class="card cursor-pointer group relative overflow-hidden" onclick="router('detail', ${u.id})">
+                    <div class="absolute top-0 left-0 w-2 h-full ${porcentaje > 90 ? 'bg-red-500' : 'bg-blue-500'}"></div>
+                    <div class="ml-4">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="font-bold text-lg text-slate-800 group-hover:text-blue-600 transition">${u.name}</h3>
+                                <p class="text-xs text-slate-500 uppercase font-bold tracking-wider"><i class="fas ${icon}"></i> ${u.type}</p>
+                            </div>
+                            <span class="text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-600">${u.w}x${u.h}x${u.d}</span>
+                        </div>
+                        
+                        <div class="mt-4">
+                            <div class="flex justify-between text-xs mb-1 font-bold text-slate-500">
+                                <span>Ocupación</span>
+                                <span>${porcentaje}%</span>
+                            </div>
+                            <div class="w-full bg-slate-200 rounded-full h-2">
+                                <div class="bg-blue-600 h-2 rounded-full transition-all duration-500" style="width: ${porcentaje}%"></div>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 flex justify-between items-center border-t border-slate-100 pt-3">
+                            <span class="text-xs text-slate-400">${u.cargo.length} ref. de cajas</span>
+                            <button onclick="deleteUnit(${u.id}, event)" class="text-red-400 hover:text-red-600 p-2"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+
+        if (units.length > 0) html += '</div>';
+        container.innerHTML = html;
+    }
+
+    // --- VISTA: DETALLE Y 3D ---
+    function renderDetail(container) {
+        const u = units.find(x => x.id === activeUnitId);
+        if(!u) return router('dashboard');
+
+        container.innerHTML = `
+            <div class="flex flex-col lg:flex-row gap-6 h-full">
+                <div class="flex-grow lg:w-2/3 flex flex-col">
+                    <div class="flex justify-between items-center mb-4">
+                        <button onclick="router('dashboard')" class="text-slate-500 hover:text-blue-600 font-bold"><i class="fas fa-arrow-left"></i> Volver</button>
+                        <h2 class="text-xl font-bold text-slate-800"><i class="fas fa-cube text-blue-500"></i> ${u.name} <span class="text-sm font-normal text-slate-400">(${u.w}x${u.h}x${u.d} cm)</span></h2>
+                    </div>
+                    
+                    <div id="canvas-wrapper" class="relative group">
+                         <div class="absolute top-4 left-4 bg-white/90 backdrop-blur px-3 py-2 rounded-lg text-xs shadow text-slate-700 z-10 pointer-events-none">
+                            <div class="font-bold mb-1">Controles 3D:</div>
+                            <div>🖱️ Izq: Rotar</div>
+                            <div>🖱️ Der: Mover</div>
+                            <div>⚙️ Rueda: Zoom</div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-4 bg-white p-4 rounded-xl shadow-sm flex justify-between items-center">
+                        <div>
+                            <p class="text-xs text-slate-400 font-bold uppercase">Estado de Carga</p>
+                            <div class="text-2xl font-bold text-slate-700" id="vol-display">0%</div>
+                        </div>
+                        <button onclick="optimizeView()" class="btn btn-primary shadow-lg shadow-blue-200">
+                            <i class="fas fa-sync-alt"></i> Re-Calcular Acomodo
+                        </button>
+                    </div>
+                </div>
+
+                <div class="lg:w-1/3 bg-white rounded-xl shadow-lg flex flex-col h-full overflow-hidden border border-slate-200">
+                    <div class="p-4 bg-slate-50 border-b border-slate-200">
+                        <h3 class="font-bold text-slate-700">📦 Agregar Carga</h3>
+                    </div>
+                    
+                    <div class="p-4 space-y-3 border-b border-slate-200">
+                        <input id="bx-name" placeholder="Nombre (Ej: Cajas Zapatos)" class="w-full p-2 border rounded text-sm">
+                        <div class="grid grid-cols-3 gap-2">
+                            <input id="bx-w" type="number" placeholder="An" class="p-2 border rounded text-sm">
+                            <input id="bx-h" type="number" placeholder="Al" class="p-2 border rounded text-sm">
+                            <input id="bx-d" type="number" placeholder="Fo" class="p-2 border rounded text-sm">
+                        </div>
+                        <div class="flex gap-2">
+                            <input id="bx-q" type="number" placeholder="Cant." value="1" class="w-20 p-2 border rounded text-sm">
+                            <input id="bx-color" type="color" value="#3b82f6" class="h-10 w-12 p-0 border rounded cursor-pointer">
+                            <button onclick="addBox()" class="flex-1 bg-slate-800 text-white rounded text-sm font-bold hover:bg-black">Añadir</button>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto p-4 bg-slate-50">
+                        <h4 class="text-xs font-bold text-slate-400 uppercase mb-2">Inventario Cargado</h4>
+                        <div id="inventory-list" class="space-y-2">
+                            </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        renderInventoryList(u);
+    }
+
+    // --- LOGICA DE CAJAS ---
+    function addBox() {
+        const u = units.find(x => x.id === activeUnitId);
+        const name = document.getElementById('bx-name').value || 'Caja Genérica';
+        const w = parseFloat(document.getElementById('bx-w').value);
+        const h = parseFloat(document.getElementById('bx-h').value);
+        const d = parseFloat(document.getElementById('bx-d').value);
+        const q = parseInt(document.getElementById('bx-q').value);
+        const color = document.getElementById('bx-color').value;
+
+        if(!w || !h || !d || !q) return alert("Dimensiones inválidas");
+        
+        // Validación básica de tamaño
+        if(w > u.w || h > u.h || d > u.d) return alert("¡La caja es más grande que el contenedor!");
+
+        u.cargo.push({ id: Date.now(), name, w, h, d, q, color });
+        saveData();
+        renderInventoryList(u);
+        optimizeView(); // Recargar 3D
+        
+        // Limpiar inputs
+        document.getElementById('bx-name').value = '';
+    }
+
+    function removeBox(boxId) {
+        const u = units.find(x => x.id === activeUnitId);
+        u.cargo = u.cargo.filter(b => b.id !== boxId);
+        saveData();
+        renderInventoryList(u);
+        optimizeView();
+    }
+
+    function renderInventoryList(u) {
+        const list = document.getElementById('inventory-list');
+        if(!list) return;
+        
+        list.innerHTML = '';
+        u.cargo.forEach(b => {
+            list.innerHTML += `
+                <div class="flex justify-between items-center bg-white p-2 rounded shadow-sm border border-slate-100">
+                    <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 rounded-full" style="background:${b.color}"></div>
+                        <div>
+                            <div class="text-sm font-bold text-slate-700">${b.q}x ${b.name}</div>
+                            <div class="text-xs text-slate-400">${b.w}×${b.h}×${b.d}</div>
+                        </div>
+                    </div>
+                    <button onclick="removeBox(${b.id})" class="text-red-400 hover:text-red-600 px-2"><i class="fas fa-times"></i></button>
+                </div>
+            `;
+        });
+        
+        // Actualizar stats volumen
+        const volTotal = u.w * u.h * u.d;
+        const volOcupado = u.cargo.reduce((acc, b) => acc + (b.w * b.h * b.d * b.q), 0);
+        const pct = ((volOcupado / volTotal) * 100).toFixed(1);
+        const display = document.getElementById('vol-display');
+        if(display) display.innerText = `${pct}% Ocupado`;
+    }
+
+    // --- THREE.JS LOGIC ---
+    function init3D() {
+        const wrapper = document.getElementById('canvas-wrapper');
+        if(!wrapper) return;
+
+        // Limpieza previa si existe
+        wrapper.innerHTML = '';
+
+        // Escena
+        scene = new THREE.Scene();
+        // Fondo degradado simulado con color solido para rendimiento
+        scene.background = null; 
+
+        // Cámara
+        camera = new THREE.PerspectiveCamera(45, wrapper.clientWidth / wrapper.clientHeight, 1, 10000);
+        
+        // Renderer
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
+        renderer.shadowMap.enabled = true;
+        wrapper.appendChild(renderer.domElement);
+
+        // Controles
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        // Luces
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(200, 500, 200);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        // Render Loop
+        animate();
+        
+        // Cargar modelo inicial
+        optimizeView();
+        
+        // Resize Listener
+        window.addEventListener('resize', () => {
+            if(!wrapper) return;
+            camera.aspect = wrapper.clientWidth / wrapper.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(wrapper.clientWidth, wrapper.clientHeight);
+        });
+    }
+
+    function animate() {
+        if(!document.getElementById('canvas-wrapper')) return;
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+    }
+
+    function optimizeView() {
+        if(!activeUnitId || !scene) return;
+        
+        // Limpiar escena de objetos anteriores (menos luces)
+        const toRemove = [];
+        scene.traverse(child => {
+            if(child.isMesh || child.isLineSegments) toRemove.push(child);
+        });
+        toRemove.forEach(obj => scene.remove(obj));
+
+        const u = units.find(x => x.id === activeUnitId);
+        
+        // 1. DIBUJAR CONTENEDOR (Wireframe)
+        const boxGeo = new THREE.BoxGeometry(u.w, u.h, u.d);
+        const edges = new THREE.EdgesGeometry(boxGeo);
+        const containerMat = new THREE.LineBasicMaterial({ color: 0x334155, linewidth: 2 });
+        const containerMesh = new THREE.LineSegments(edges, containerMat);
+        scene.add(containerMesh);
+
+        // Piso opaco para referencia
+        const planeGeo = new THREE.PlaneGeometry(u.w, u.d);
+        const planeMat = new THREE.MeshBasicMaterial({ color: 0xe2e8f0, side: THREE.DoubleSide, transparent: true, opacity: 0.3 });
+        const plane = new THREE.Mesh(planeGeo, planeMat);
+        plane.rotation.x = Math.PI / 2;
+        plane.position.y = -u.h / 2;
+        scene.add(plane);
+
+        // Ajustar cámara para ver todo el contenedor
+        const maxDim = Math.max(u.w, u.h, u.d);
+        camera.position.set(maxDim * 1.5, maxDim * 1.2, maxDim * 1.5);
+        controls.target.set(0,0,0);
+
+        // 2. ALGORITMO DE ACOMODO 3D (HEURISTICA SIMPLE "WALL BUILDING")
+        // Nota: Esto es una simplificación visual. El empaquetado 3D real es muy complejo.
+        // Aquí llenamos de atrás hacia adelante (Z), luego izquierda a derecha (X), luego abajo a arriba (Y).
+        
+        let cursorX = -u.w / 2;
+        let cursorY = -u.h / 2;
+        let cursorZ = -u.d / 2;
+        
+        let maxH_in_row = 0; // Altura máxima en la fila actual
+        let maxZ_in_layer = 0; // Profundidad máxima en la capa actual (X)
+
+        // Aplanar inventario: Expandir cantidades a cajas individuales
+        let allBoxes = [];
+        u.cargo.forEach(g => {
+            for(let i=0; i<g.q; i++) allBoxes.push({...g});
+        });
+
+        // Ordenar cajas (heuristic: más grandes primero ayuda al empaquetado)
+        allBoxes.sort((a,b) => (b.h) - (a.h));
+
+        allBoxes.forEach(box => {
+            const bw = box.w;
+            const bh = box.h;
+            const bd = box.d;
+
+            // Chequeo de límites
+            if(cursorX + bw > u.w / 2) {
+                // Salto de fila en X -> Reiniciar X, avanzar en Z
+                cursorX = -u.w / 2;
+                cursorZ += maxZ_in_layer; 
+                maxZ_in_layer = 0; // Reset para nueva fila Z
+            }
+
+            if(cursorZ + bd > u.d / 2) {
+                // Salto de piso en Z -> Reiniciar Z, subir en Y
+                cursorZ = -u.d / 2;
+                cursorY += maxH_in_row;
+                maxH_in_row = 0;
+            }
+
+            if(cursorY + bh > u.h / 2) {
+                // Ya no cabe en altura
+                console.log("Caja fuera de límites verticales");
+                return; 
+            }
+
+            // DIBUJAR CAJA
+            const geometry = new THREE.BoxGeometry(bw - 1, bh - 1, bd - 1); // -1 para gap visual
+            const material = new THREE.MeshStandardMaterial({ color: box.color, roughness: 0.5 });
+            const mesh = new THREE.Mesh(geometry, material);
+            
+            // Posicionar (Three.js usa centro del objeto, ajustamos pivote)
+            mesh.position.set(
+                cursorX + bw / 2,
+                cursorY + bh / 2,
+                cursorZ + bd / 2
+            );
+            
+            // Bordes negros para definición
+            const borderGeo = new THREE.EdgesGeometry(geometry);
+            const borderMat = new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.3, transparent: true });
+            const border = new THREE.LineSegments(borderGeo, borderMat);
+            border.position.copy(mesh.position);
+
+            scene.add(mesh);
+            scene.add(border);
+
+            // Actualizar cursores
+            cursorX += bw;
+            if(bh > maxH_in_row) maxH_in_row = bh;
+            if(bd > maxZ_in_layer) maxZ_in_layer = bd;
+        });
+    }
+
+    // --- LOGICA DE UNIDADES ---
+    function openModal() { document.getElementById('modal').classList.remove('hidden'); }
+    function closeModal() { document.getElementById('modal').classList.add('hidden'); }
+    
+    function presetDims() {
+        const type = document.getElementById('u-type').value;
+        const w = document.getElementById('u-w');
+        const h = document.getElementById('u-h');
+        const d = document.getElementById('u-d');
+        
+        if(type === 'contenedor'){ w.value=235; h.value=239; d.value=1203; }
+        else if(type === 'mula'){ w.value=260; h.value=280; d.value=1360; }
+        else if(type === 'camion'){ w.value=245; h.value=250; d.value=650; }
+        else if(type === 'estante'){ w.value=200; h.value=200; d.value=60; }
+    }
+
+    function createUnit() {
+        const name = document.getElementById('u-name').value;
+        if(!name) return alert("Ponle un nombre");
+        
+        const newUnit = {
+            id: Date.now(),
+            name: name,
+            type: document.getElementById('u-type').value,
+            w: parseFloat(document.getElementById('u-w').value),
+            h: parseFloat(document.getElementById('u-h').value),
+            d: parseFloat(document.getElementById('u-d').value),
+            cargo: []
+        };
+        
+        units.push(newUnit);
+        saveData();
+        closeModal();
+        router('dashboard');
+    }
+
+    function deleteUnit(id, e) {
+        e.stopPropagation();
+        if(confirm("¿Eliminar unidad y toda su carga?")) {
+            units = units.filter(u => u.id !== id);
+            saveData();
+            router('dashboard');
+        }
+    }
+
+    function saveData() {
+        localStorage.setItem('logimaster_db', JSON.stringify(units));
+    }
+
+    // Iniciar
+    router('dashboard');
+
+</script>
+</body>
+</html>
